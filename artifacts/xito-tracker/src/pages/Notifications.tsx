@@ -26,7 +26,7 @@ export default function Notifications() {
   };
 
   const handleMarkAllRead = async () => {
-    await markAllRead.mutateAsync({});
+    await markAllRead.mutateAsync();
     refetch();
   };
 

@@ -17,7 +17,8 @@ import {
   FileText,
   Camera,
   Video,
-  Edit
+  Edit,
+  FolderOpen
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 

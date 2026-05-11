@@ -4,30 +4,21 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
-const rawPort = process.env.PORT;
+const port = Number(process.env.PORT ?? 21120);
+const basePath = process.env.BASE_PATH ?? "/";
+const apiPort = 8080;
 
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
-const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
-  throw new Error(
-    "BASE_PATH environment variable is required but was not provided.",
-  );
+// Replit exposes secrets as process.env on the server. Vite only injects
+// VITE_* vars into import.meta.env when they exist in process.env at startup.
+// Copy CLERK_PUBLISHABLE_KEY → VITE_CLERK_PUBLISHABLE_KEY before Vite reads env
+// so import.meta.env.VITE_CLERK_PUBLISHABLE_KEY is available in the browser.
+if (!process.env.VITE_CLERK_PUBLISHABLE_KEY && process.env.CLERK_PUBLISHABLE_KEY) {
+  process.env.VITE_CLERK_PUBLISHABLE_KEY = process.env.CLERK_PUBLISHABLE_KEY;
 }
 
 export default defineConfig({
   base: basePath,
+  envPrefix: "VITE_",
   plugins: [
     react(),
     tailwindcss(),
@@ -65,6 +56,13 @@ export default defineConfig({
     allowedHosts: true,
     fs: {
       strict: true,
+    },
+    proxy: {
+      "/api": {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   preview: {

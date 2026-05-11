@@ -1,82 +1,51 @@
 import { Router } from "express";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/db";
+import { clientsTable } from "@workspace/db/schema";
 import { CreateClientBody, UpdateClientBody } from "@workspace/api-zod";
+import { eq } from "drizzle-orm";
 
 const router = Router();
 
-const TABLE = "xito_clients";
-
-function mapRow(c: Record<string, unknown>) {
+function mapRow(c: typeof clientsTable.$inferSelect) {
   return {
     id: c.id,
     name: c.name,
     email: c.email,
     phone: c.phone,
     status: c.status,
-    weddingDate: c.wedding_date,
-    eventLocation: c.event_location,
-    packageType: c.package_type,
-    totalAmount: c.total_amount,
-    advancePaid: c.advance_paid,
-    remainingBalance: c.remaining_balance,
-    paymentStatus: c.payment_status,
+    weddingDate: c.weddingDate,
+    eventLocation: c.eventLocation,
+    packageType: c.packageType,
+    totalAmount: c.totalAmount,
+    advancePaid: c.advancePaid,
+    remainingBalance: c.remainingBalance,
+    paymentStatus: c.paymentStatus,
     notes: c.notes,
     tags: c.tags ?? [],
     progress: c.progress ?? 0,
-    referredBy: c.referred_by,
-    avatarUrl: c.avatar_url,
-    createdAt: c.created_at,
-    updatedAt: c.updated_at,
+    referredBy: c.referredBy,
+    avatarUrl: c.avatarUrl,
+    createdAt: c.createdAt?.toISOString(),
+    updatedAt: c.updatedAt?.toISOString(),
   };
-}
-
-function toDb(data: Record<string, unknown>) {
-  const row: Record<string, unknown> = {};
-  if (data.name !== undefined) row.name = data.name;
-  if (data.email !== undefined) row.email = data.email;
-  if (data.phone !== undefined) row.phone = data.phone;
-  if (data.status !== undefined) row.status = data.status;
-  if (data.weddingDate !== undefined) row.wedding_date = data.weddingDate;
-  if (data.eventLocation !== undefined) row.event_location = data.eventLocation;
-  if (data.packageType !== undefined) row.package_type = data.packageType;
-  if (data.totalAmount !== undefined) row.total_amount = data.totalAmount;
-  if (data.advancePaid !== undefined) row.advance_paid = data.advancePaid;
-  if (data.remainingBalance !== undefined) row.remaining_balance = data.remainingBalance;
-  if (data.paymentStatus !== undefined) row.payment_status = data.paymentStatus;
-  if (data.notes !== undefined) row.notes = data.notes;
-  if (data.tags !== undefined) row.tags = data.tags;
-  if (data.progress !== undefined) row.progress = data.progress;
-  if (data.referredBy !== undefined) row.referred_by = data.referredBy;
-  if (data.avatarUrl !== undefined) row.avatar_url = data.avatarUrl;
-  return row;
 }
 
 router.get("/", async (req, res) => {
   try {
     const { search, status, tag } = req.query as Record<string, string>;
-    let query = supabase.from(TABLE).select("*").order("created_at");
-
-    if (status) query = query.eq("status", status);
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    let clients = (data ?? []).map(mapRow);
-
+    let clients = await db.select().from(clientsTable).orderBy(clientsTable.createdAt);
+    if (status) clients = clients.filter((c) => c.status === status);
     if (search) {
       const s = search.toLowerCase();
       clients = clients.filter(
         (c) =>
-          String(c.name).toLowerCase().includes(s) ||
-          String(c.email).toLowerCase().includes(s) ||
-          (c.phone && String(c.phone).includes(s))
+          c.name.toLowerCase().includes(s) ||
+          c.email.toLowerCase().includes(s) ||
+          (c.phone && c.phone.includes(s))
       );
     }
-    if (tag) {
-      clients = clients.filter((c) => Array.isArray(c.tags) && c.tags.includes(tag));
-    }
-
-    res.json(clients);
+    if (tag) clients = clients.filter((c) => Array.isArray(c.tags) && c.tags.includes(tag));
+    res.json(clients.map(mapRow));
   } catch (err) {
     req.log.error({ err }, "Failed to list clients");
     res.status(500).json({ error: "Internal server error" });
@@ -86,13 +55,25 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const parsed = CreateClientBody.parse(req.body);
-    const row = toDb(parsed as unknown as Record<string, unknown>);
-    row.updated_at = new Date().toISOString();
-
-    const { data, error } = await supabase.from(TABLE).insert(row).select().single();
-    if (error) throw error;
-
-    res.status(201).json(mapRow(data));
+    const [inserted] = await db.insert(clientsTable).values({
+      name: parsed.name,
+      email: parsed.email,
+      phone: parsed.phone,
+      status: parsed.status ?? "active",
+      weddingDate: parsed.weddingDate ?? null,
+      eventLocation: parsed.eventLocation ?? null,
+      packageType: parsed.packageType ?? null,
+      totalAmount: parsed.totalAmount ?? null,
+      advancePaid: parsed.advancePaid ?? null,
+      remainingBalance: parsed.remainingBalance ?? null,
+      paymentStatus: parsed.paymentStatus ?? "pending",
+      notes: parsed.notes ?? null,
+      tags: parsed.tags ?? [],
+      progress: parsed.progress ?? 0,
+      referredBy: parsed.referredBy ?? null,
+      avatarUrl: parsed.avatarUrl ?? null,
+    }).returning();
+    res.status(201).json(mapRow(inserted));
   } catch (err) {
     req.log.error({ err }, "Failed to create client");
     res.status(400).json({ error: "Invalid data" });
@@ -101,12 +82,10 @@ router.post("/", async (req, res) => {
 
 router.get("/:id", async (req, res): Promise<void> => {
   try {
-    const { data, error } = await supabase.from(TABLE).select("*").eq("id", req.params.id).single();
-    if (error || !data) {
-      res.status(404).json({ error: "Client not found" });
-      return;
-    }
-    res.json(mapRow(data));
+    const id = parseInt(req.params.id, 10);
+    const [client] = await db.select().from(clientsTable).where(eq(clientsTable.id, id));
+    if (!client) { res.status(404).json({ error: "Client not found" }); return; }
+    res.json(mapRow(client));
   } catch (err) {
     req.log.error({ err }, "Failed to get client");
     res.status(500).json({ error: "Internal server error" });
@@ -115,22 +94,28 @@ router.get("/:id", async (req, res): Promise<void> => {
 
 router.patch("/:id", async (req, res): Promise<void> => {
   try {
+    const id = parseInt(req.params.id, 10);
     const parsed = UpdateClientBody.parse(req.body);
-    const row = toDb(parsed as unknown as Record<string, unknown>);
-    row.updated_at = new Date().toISOString();
-
-    const { data, error } = await supabase
-      .from(TABLE)
-      .update(row)
-      .eq("id", req.params.id)
-      .select()
-      .single();
-
-    if (error || !data) {
-      res.status(404).json({ error: "Client not found" });
-      return;
-    }
-    res.json(mapRow(data));
+    const updateData: Partial<typeof clientsTable.$inferInsert> = {};
+    if (parsed.name !== undefined) updateData.name = parsed.name;
+    if (parsed.email !== undefined) updateData.email = parsed.email;
+    if (parsed.phone !== undefined) updateData.phone = parsed.phone;
+    if (parsed.status !== undefined) updateData.status = parsed.status;
+    if (parsed.weddingDate !== undefined) updateData.weddingDate = parsed.weddingDate;
+    if (parsed.eventLocation !== undefined) updateData.eventLocation = parsed.eventLocation;
+    if (parsed.packageType !== undefined) updateData.packageType = parsed.packageType;
+    if (parsed.totalAmount !== undefined) updateData.totalAmount = parsed.totalAmount;
+    if (parsed.advancePaid !== undefined) updateData.advancePaid = parsed.advancePaid;
+    if (parsed.remainingBalance !== undefined) updateData.remainingBalance = parsed.remainingBalance;
+    if (parsed.paymentStatus !== undefined) updateData.paymentStatus = parsed.paymentStatus;
+    if (parsed.notes !== undefined) updateData.notes = parsed.notes;
+    if (parsed.tags !== undefined) updateData.tags = parsed.tags;
+    if (parsed.progress !== undefined) updateData.progress = parsed.progress;
+    if (parsed.referredBy !== undefined) updateData.referredBy = parsed.referredBy;
+    if (parsed.avatarUrl !== undefined) updateData.avatarUrl = parsed.avatarUrl;
+    const [updated] = await db.update(clientsTable).set(updateData).where(eq(clientsTable.id, id)).returning();
+    if (!updated) { res.status(404).json({ error: "Client not found" }); return; }
+    res.json(mapRow(updated));
   } catch (err) {
     req.log.error({ err }, "Failed to update client");
     res.status(400).json({ error: "Invalid data" });
@@ -139,8 +124,8 @@ router.patch("/:id", async (req, res): Promise<void> => {
 
 router.delete("/:id", async (req, res) => {
   try {
-    const { error } = await supabase.from(TABLE).delete().eq("id", req.params.id);
-    if (error) throw error;
+    const id = parseInt(req.params.id, 10);
+    await db.delete(clientsTable).where(eq(clientsTable.id, id));
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Failed to delete client");

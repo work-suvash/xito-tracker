@@ -3,6 +3,8 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
+import path from "path";
+import { existsSync } from "fs";
 import {
   CLERK_PROXY_PATH,
   clerkProxyMiddleware,
@@ -49,5 +51,18 @@ app.use(
 );
 
 app.use("/api", router);
+
+// Serve built frontend in production
+const frontendDist = path.resolve(
+  path.dirname(new URL(import.meta.url).pathname),
+  "./public",
+);
+
+if (process.env.NODE_ENV === "production" && existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(frontendDist, "index.html"));
+  });
+}
 
 export default app;

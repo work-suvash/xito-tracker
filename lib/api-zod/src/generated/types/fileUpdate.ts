@@ -8,10 +8,22 @@
 
 export interface FileUpdate {
   name?: string;
+  type?: string;
+  /** @nullable */
+  size?: number | null;
+  /** @nullable */
+  url?: string | null;
   /** @nullable */
   deliveryLink?: string | null;
+  /** @nullable */
+  projectId?: number | null;
+  /** @nullable */
+  clientId?: number | null;
+  /** @nullable */
+  uploadedBy?: string | null;
   availability?: string;
   backupStatus?: string;
+  downloadCount?: number;
   /** @nullable */
   notes?: string | null;
 }

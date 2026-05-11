@@ -1,84 +1,55 @@
 import { Router } from "express";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/db";
+import { projectsTable, clientsTable } from "@workspace/db/schema";
 import { CreateProjectBody, UpdateProjectBody, UpdateProjectStatusBody } from "@workspace/api-zod";
+import { eq } from "drizzle-orm";
 
 const router = Router();
 
-const TABLE = "xito_projects";
-const CLIENTS_TABLE = "xito_clients";
-
-function mapRow(p: Record<string, unknown>, clientName?: string | null) {
+function mapRow(p: typeof projectsTable.$inferSelect, clientName?: string | null) {
   return {
     id: p.id,
     name: p.name,
-    clientId: p.client_id,
+    clientId: p.clientId,
     clientName: clientName ?? null,
     status: p.status,
     type: p.type,
     deadline: p.deadline,
-    deliveryDate: p.delivery_date,
-    deliveryLink: p.delivery_link,
+    deliveryDate: p.deliveryDate,
+    deliveryLink: p.deliveryLink,
     notes: p.notes,
     priority: p.priority ?? "medium",
-    assignedTo: p.assigned_to,
+    assignedTo: p.assignedTo,
     tags: p.tags ?? [],
-    createdAt: p.created_at,
-    updatedAt: p.updated_at,
+    createdAt: p.createdAt?.toISOString(),
+    updatedAt: p.updatedAt?.toISOString(),
   };
 }
 
-function toDb(data: Record<string, unknown>) {
-  const row: Record<string, unknown> = {};
-  if (data.name !== undefined) row.name = data.name;
-  if (data.clientId !== undefined) row.client_id = data.clientId;
-  if (data.status !== undefined) row.status = data.status;
-  if (data.type !== undefined) row.type = data.type;
-  if (data.deadline !== undefined) row.deadline = data.deadline;
-  if (data.deliveryDate !== undefined) row.delivery_date = data.deliveryDate;
-  if (data.deliveryLink !== undefined) row.delivery_link = data.deliveryLink;
-  if (data.notes !== undefined) row.notes = data.notes;
-  if (data.priority !== undefined) row.priority = data.priority;
-  if (data.assignedTo !== undefined) row.assigned_to = data.assignedTo;
-  if (data.tags !== undefined) row.tags = data.tags;
-  return row;
-}
-
-async function getClientName(clientId: unknown): Promise<string | null> {
+async function getClientName(clientId: number | null): Promise<string | null> {
   if (!clientId) return null;
-  const { data } = await supabase.from(CLIENTS_TABLE).select("name").eq("id", clientId).single();
-  return data?.name ?? null;
+  const [c] = await db.select({ name: clientsTable.name }).from(clientsTable).where(eq(clientsTable.id, clientId));
+  return c?.name ?? null;
 }
 
 router.get("/", async (req, res) => {
   try {
     const { clientId, status, search } = req.query as Record<string, string>;
-
-    let query = supabase.from(TABLE).select("*").order("created_at");
-    if (clientId) query = query.eq("client_id", clientId);
-    if (status) query = query.eq("status", status);
-
-    const [{ data: projects, error }, { data: clients }] = await Promise.all([
-      query,
-      supabase.from(CLIENTS_TABLE).select("id, name"),
+    const [projects, clients] = await Promise.all([
+      db.select().from(projectsTable).orderBy(projectsTable.createdAt),
+      db.select({ id: clientsTable.id, name: clientsTable.name }).from(clientsTable),
     ]);
-
-    if (error) throw error;
-
-    const clientMap = new Map((clients ?? []).map((c: Record<string, unknown>) => [String(c.id), c.name]));
-
-    let result = (projects ?? []).map((p: Record<string, unknown>) =>
-      mapRow(p, clientMap.get(String(p.client_id)) as string | null)
-    );
-
+    const clientMap = new Map(clients.map((c) => [c.id, c.name]));
+    let result = projects
+      .filter((p) => (!clientId || p.clientId === parseInt(clientId, 10)))
+      .filter((p) => (!status || p.status === status))
+      .map((p) => mapRow(p, clientMap.get(p.clientId) ?? null));
     if (search) {
       const s = search.toLowerCase();
       result = result.filter(
-        (p) =>
-          String(p.name).toLowerCase().includes(s) ||
-          (p.clientName && String(p.clientName).toLowerCase().includes(s))
+        (p) => p.name.toLowerCase().includes(s) || (p.clientName && p.clientName.toLowerCase().includes(s))
       );
     }
-
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to list projects");
@@ -89,14 +60,21 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const parsed = CreateProjectBody.parse(req.body);
-    const row = toDb(parsed as unknown as Record<string, unknown>);
-    row.updated_at = new Date().toISOString();
-
-    const { data, error } = await supabase.from(TABLE).insert(row).select().single();
-    if (error) throw error;
-
-    const clientName = await getClientName(data.client_id);
-    res.status(201).json(mapRow(data, clientName));
+    const [inserted] = await db.insert(projectsTable).values({
+      name: parsed.name,
+      clientId: parsed.clientId,
+      status: parsed.status ?? "Booked",
+      type: parsed.type ?? null,
+      deadline: parsed.deadline ?? null,
+      deliveryDate: parsed.deliveryDate ?? null,
+      deliveryLink: parsed.deliveryLink ?? null,
+      notes: parsed.notes ?? null,
+      priority: parsed.priority ?? "medium",
+      assignedTo: parsed.assignedTo ?? null,
+      tags: parsed.tags ?? [],
+    }).returning();
+    const clientName = await getClientName(inserted.clientId);
+    res.status(201).json(mapRow(inserted, clientName));
   } catch (err) {
     req.log.error({ err }, "Failed to create project");
     res.status(400).json({ error: "Invalid data" });
@@ -105,13 +83,11 @@ router.post("/", async (req, res) => {
 
 router.get("/:id", async (req, res): Promise<void> => {
   try {
-    const { data, error } = await supabase.from(TABLE).select("*").eq("id", req.params.id).single();
-    if (error || !data) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-    const clientName = await getClientName(data.client_id);
-    res.json(mapRow(data, clientName));
+    const id = parseInt(req.params.id, 10);
+    const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, id));
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+    const clientName = await getClientName(project.clientId);
+    res.json(mapRow(project, clientName));
   } catch (err) {
     req.log.error({ err }, "Failed to get project");
     res.status(500).json({ error: "Internal server error" });
@@ -120,23 +96,24 @@ router.get("/:id", async (req, res): Promise<void> => {
 
 router.patch("/:id", async (req, res): Promise<void> => {
   try {
+    const id = parseInt(req.params.id, 10);
     const parsed = UpdateProjectBody.parse(req.body);
-    const row = toDb(parsed as unknown as Record<string, unknown>);
-    row.updated_at = new Date().toISOString();
-
-    const { data, error } = await supabase
-      .from(TABLE)
-      .update(row)
-      .eq("id", req.params.id)
-      .select()
-      .single();
-
-    if (error || !data) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-    const clientName = await getClientName(data.client_id);
-    res.json(mapRow(data, clientName));
+    const updateData: Partial<typeof projectsTable.$inferInsert> = {};
+    if (parsed.name !== undefined) updateData.name = parsed.name;
+    if (parsed.clientId !== undefined) updateData.clientId = parsed.clientId;
+    if (parsed.status !== undefined) updateData.status = parsed.status;
+    if (parsed.type !== undefined) updateData.type = parsed.type;
+    if (parsed.deadline !== undefined) updateData.deadline = parsed.deadline;
+    if (parsed.deliveryDate !== undefined) updateData.deliveryDate = parsed.deliveryDate;
+    if (parsed.deliveryLink !== undefined) updateData.deliveryLink = parsed.deliveryLink;
+    if (parsed.notes !== undefined) updateData.notes = parsed.notes;
+    if (parsed.priority !== undefined) updateData.priority = parsed.priority;
+    if (parsed.assignedTo !== undefined) updateData.assignedTo = parsed.assignedTo;
+    if (parsed.tags !== undefined) updateData.tags = parsed.tags;
+    const [updated] = await db.update(projectsTable).set(updateData).where(eq(projectsTable.id, id)).returning();
+    if (!updated) { res.status(404).json({ error: "Project not found" }); return; }
+    const clientName = await getClientName(updated.clientId);
+    res.json(mapRow(updated, clientName));
   } catch (err) {
     req.log.error({ err }, "Failed to update project");
     res.status(400).json({ error: "Invalid data" });
@@ -145,8 +122,8 @@ router.patch("/:id", async (req, res): Promise<void> => {
 
 router.delete("/:id", async (req, res) => {
   try {
-    const { error } = await supabase.from(TABLE).delete().eq("id", req.params.id);
-    if (error) throw error;
+    const id = parseInt(req.params.id, 10);
+    await db.delete(projectsTable).where(eq(projectsTable.id, id));
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Failed to delete project");
@@ -156,23 +133,15 @@ router.delete("/:id", async (req, res) => {
 
 router.patch("/:id/status", async (req, res): Promise<void> => {
   try {
+    const id = parseInt(req.params.id, 10);
     const parsed = UpdateProjectStatusBody.parse(req.body);
-    const { data, error } = await supabase
-      .from(TABLE)
-      .update({ status: parsed.status, updated_at: new Date().toISOString() })
-      .eq("id", req.params.id)
-      .select()
-      .single();
-
-    if (error || !data) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-    const clientName = await getClientName(data.client_id);
-    res.json(mapRow(data, clientName));
+    const [updated] = await db.update(projectsTable).set({ status: parsed.status }).where(eq(projectsTable.id, id)).returning();
+    if (!updated) { res.status(404).json({ error: "Project not found" }); return; }
+    const clientName = await getClientName(updated.clientId);
+    res.json(mapRow(updated, clientName));
   } catch (err) {
     req.log.error({ err }, "Failed to update project status");
-    res.status(400).json({ error: "Invalid data" });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

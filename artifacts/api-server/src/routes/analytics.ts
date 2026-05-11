@@ -1,54 +1,38 @@
 import { Router } from "express";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/db";
+import { clientsTable, projectsTable, filesTable } from "@workspace/db/schema";
 
 const router = Router();
 
 router.get("/dashboard", async (req, res) => {
   try {
-    const [{ data: clients }, { data: projects }, { data: files }] = await Promise.all([
-      supabase.from("xito_clients").select("*"),
-      supabase.from("xito_projects").select("*"),
-      supabase.from("xito_files").select("size"),
+    const [clients, projects, files] = await Promise.all([
+      db.select().from(clientsTable),
+      db.select().from(projectsTable),
+      db.select({ size: filesTable.size }).from(filesTable),
     ]);
 
-    const c = clients ?? [];
-    const p = projects ?? [];
-    const f = files ?? [];
+    const totalClients = clients.length;
+    const activeProjects = projects.filter((x) => x.status !== "Completed").length;
+    const pendingDeliveries = projects.filter((x) => x.status === "Preview Sent" || x.status === "Final Delivery").length;
+    const completedWeddings = projects.filter((x) => x.status === "Completed").length;
 
-    const totalClients = c.length;
-    const activeProjects = p.filter((x: Record<string, unknown>) => x.status !== "Completed").length;
-    const pendingDeliveries = p.filter(
-      (x: Record<string, unknown>) => x.status === "Preview Sent" || x.status === "Final Delivery"
-    ).length;
-    const completedWeddings = p.filter((x: Record<string, unknown>) => x.status === "Completed").length;
-
-    const totalRevenue = c.reduce((sum: number, x: Record<string, unknown>) => sum + ((x.total_amount as number) ?? 0), 0);
-    const collectedRevenue = c.reduce((sum: number, x: Record<string, unknown>) => sum + ((x.advance_paid as number) ?? 0), 0);
-    const pendingRevenue = c.reduce((sum: number, x: Record<string, unknown>) => sum + ((x.remaining_balance as number) ?? 0), 0);
+    const totalRevenue = clients.reduce((sum, x) => sum + (x.totalAmount ?? 0), 0);
+    const collectedRevenue = clients.reduce((sum, x) => sum + (x.advancePaid ?? 0), 0);
+    const pendingRevenue = clients.reduce((sum, x) => sum + (x.remainingBalance ?? 0), 0);
 
     const now = new Date();
     const thisMonth = now.getMonth();
     const thisYear = now.getFullYear();
-    const thisMonthBookings = c.filter((x: Record<string, unknown>) => {
-      const d = new Date(x.created_at as string);
+    const thisMonthBookings = clients.filter((x) => {
+      const d = new Date(x.createdAt);
       return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
     }).length;
 
-    const storageUsed = f.reduce((sum: number, x: Record<string, unknown>) => sum + ((x.size as number) ?? 0), 0);
-    const totalFiles = f.length;
+    const storageUsed = files.reduce((sum, x) => sum + (x.size ?? 0), 0);
+    const totalFiles = files.length;
 
-    res.json({
-      totalClients,
-      activeProjects,
-      pendingDeliveries,
-      completedWeddings,
-      totalRevenue,
-      collectedRevenue,
-      pendingRevenue,
-      thisMonthBookings,
-      storageUsed,
-      totalFiles,
-    });
+    res.json({ totalClients, activeProjects, pendingDeliveries, completedWeddings, totalRevenue, collectedRevenue, pendingRevenue, thisMonthBookings, storageUsed, totalFiles });
   } catch (err) {
     req.log.error({ err }, "Failed to get dashboard stats");
     res.status(500).json({ error: "Internal server error" });
@@ -59,22 +43,19 @@ router.get("/monthly", async (req, res) => {
   try {
     const year = parseInt((req.query.year as string) ?? String(new Date().getFullYear()), 10);
 
-    const [{ data: clients }, { data: projects }] = await Promise.all([
-      supabase.from("xito_clients").select("created_at, total_amount"),
-      supabase.from("xito_projects").select("created_at, status"),
+    const [clients, projects] = await Promise.all([
+      db.select({ createdAt: clientsTable.createdAt, totalAmount: clientsTable.totalAmount }).from(clientsTable),
+      db.select({ createdAt: projectsTable.createdAt, status: projectsTable.status }).from(projectsTable),
     ]);
-
-    const c = clients ?? [];
-    const p = projects ?? [];
 
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const result = months.map((monthName, idx) => {
-      const monthClients = c.filter((x: Record<string, unknown>) => {
-        const d = new Date(x.created_at as string);
+      const monthClients = clients.filter((x) => {
+        const d = new Date(x.createdAt);
         return d.getMonth() === idx && d.getFullYear() === year;
       });
-      const monthProjects = p.filter((x: Record<string, unknown>) => {
-        const d = new Date(x.created_at as string);
+      const monthProjects = projects.filter((x) => {
+        const d = new Date(x.createdAt);
         return d.getMonth() === idx && d.getFullYear() === year && x.status === "Completed";
       });
       return {
@@ -82,7 +63,7 @@ router.get("/monthly", async (req, res) => {
         year,
         monthName,
         bookings: monthClients.length,
-        revenue: monthClients.reduce((sum: number, x: Record<string, unknown>) => sum + ((x.total_amount as number) ?? 0), 0),
+        revenue: monthClients.reduce((sum, x) => sum + (x.totalAmount ?? 0), 0),
         projectsCompleted: monthProjects.length,
       };
     });
@@ -96,80 +77,44 @@ router.get("/monthly", async (req, res) => {
 
 router.get("/upcoming", async (req, res) => {
   try {
-    const [{ data: clients }, { data: projects }] = await Promise.all([
-      supabase.from("xito_clients").select("*"),
-      supabase.from("xito_projects").select("*"),
+    const [clients, projects] = await Promise.all([
+      db.select().from(clientsTable),
+      db.select().from(projectsTable),
     ]);
-
-    const c = clients ?? [];
-    const p = projects ?? [];
-    const clientMap = new Map(c.map((x: Record<string, unknown>) => [String(x.id), x.name as string]));
+    const clientMap = new Map(clients.map((x) => [x.id, x.name]));
     const now = new Date();
 
-    const events: Array<{
-      id: number;
-      type: string;
-      title: string;
-      date: string;
-      clientName: string | null;
-      projectName: string | null;
-      daysUntil: number;
-      urgency: string;
-    }> = [];
+    const events: Array<{ id: number; type: string; title: string; date: string; clientName: string | null; projectName: string | null; daysUntil: number; urgency: string; }> = [];
 
-    c.forEach((x: Record<string, unknown>) => {
-      if (x.wedding_date) {
-        const date = new Date(x.wedding_date as string);
+    clients.forEach((x) => {
+      if (x.weddingDate) {
+        const date = new Date(x.weddingDate);
         const daysUntil = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         if (daysUntil >= 0 && daysUntil <= 90) {
-          events.push({
-            id: x.id as number,
-            type: "wedding",
-            title: `${x.name}'s Wedding`,
-            date: x.wedding_date as string,
-            clientName: x.name as string,
-            projectName: null,
-            daysUntil,
-            urgency: daysUntil <= 3 ? "critical" : daysUntil <= 7 ? "high" : daysUntil <= 30 ? "medium" : "low",
-          });
+          events.push({ id: x.id, type: "wedding", title: `${x.name}'s Wedding`, date: x.weddingDate, clientName: x.name, projectName: null, daysUntil,
+            urgency: daysUntil <= 3 ? "critical" : daysUntil <= 7 ? "high" : daysUntil <= 30 ? "medium" : "low" });
         }
       }
     });
 
-    p.forEach((x: Record<string, unknown>) => {
+    projects.forEach((x) => {
       if (x.deadline && x.status !== "Completed") {
-        const date = new Date(x.deadline as string);
+        const date = new Date(x.deadline);
         const daysUntil = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         if (daysUntil >= 0 && daysUntil <= 60) {
-          events.push({
-            id: (x.id as number) + 10000,
-            type: "deadline",
-            title: `${x.name} Deadline`,
-            date: x.deadline as string,
-            clientName: clientMap.get(String(x.client_id)) ?? null,
-            projectName: x.name as string,
-            daysUntil,
-            urgency: daysUntil <= 2 ? "critical" : daysUntil <= 7 ? "high" : daysUntil <= 14 ? "medium" : "low",
-          });
+          events.push({ id: x.id + 10000, type: "deadline", title: `${x.name} Deadline`, date: x.deadline, clientName: clientMap.get(x.clientId) ?? null, projectName: x.name, daysUntil,
+            urgency: daysUntil <= 2 ? "critical" : daysUntil <= 7 ? "high" : daysUntil <= 14 ? "medium" : "low" });
         }
       }
     });
 
-    c.forEach((x: Record<string, unknown>) => {
-      if ((x.remaining_balance as number ?? 0) > 0 && x.wedding_date) {
-        const date = new Date(x.wedding_date as string);
+    clients.forEach((x) => {
+      if ((x.remainingBalance ?? 0) > 0 && x.weddingDate) {
+        const date = new Date(x.weddingDate);
         const daysUntil = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         if (daysUntil >= 0 && daysUntil <= 30) {
-          events.push({
-            id: (x.id as number) + 20000,
-            type: "payment",
-            title: `Payment Due — ${x.name}`,
-            date: x.wedding_date as string,
-            clientName: x.name as string,
-            projectName: null,
-            daysUntil,
-            urgency: daysUntil <= 7 ? "critical" : daysUntil <= 14 ? "high" : "medium",
-          });
+          events.push({ id: x.id + 20000, type: "payment", title: `Payment Due — ${x.name}`, date: x.weddingDate, clientName: x.name, projectName: null, daysUntil,
+            urgency: daysUntil <= 7 ? "critical" : daysUntil <= 14 ? "high" : "medium" });
         }
       }
     });
@@ -184,12 +129,11 @@ router.get("/upcoming", async (req, res) => {
 
 router.get("/project-status", async (req, res) => {
   try {
-    const { data: projects } = await supabase.from("xito_projects").select("status");
-    const p = projects ?? [];
-    const total = p.length || 1;
+    const projects = await db.select({ status: projectsTable.status }).from(projectsTable);
+    const total = projects.length || 1;
     const statuses = ["Booked", "Editing", "Preview Sent", "Final Delivery", "Completed"];
     const result = statuses.map((status) => {
-      const count = p.filter((x: Record<string, unknown>) => x.status === status).length;
+      const count = projects.filter((x) => x.status === status).length;
       return { status, count, percentage: Math.round((count / total) * 100) };
     });
     res.json(result);

@@ -366,6 +366,7 @@ export const CreateFileBody = zod.object({
   uploadedBy: zod.string().nullish(),
   availability: zod.string().optional(),
   backupStatus: zod.string().optional(),
+  downloadCount: zod.number().optional(),
   notes: zod.string().nullish(),
 });
 
@@ -409,9 +410,16 @@ export const UpdateFileParams = zod.object({
 
 export const UpdateFileBody = zod.object({
   name: zod.string().optional(),
+  type: zod.string().optional(),
+  size: zod.number().nullish(),
+  url: zod.string().nullish(),
   deliveryLink: zod.string().nullish(),
+  projectId: zod.number().nullish(),
+  clientId: zod.number().nullish(),
+  uploadedBy: zod.string().nullish(),
   availability: zod.string().optional(),
   backupStatus: zod.string().optional(),
+  downloadCount: zod.number().optional(),
   notes: zod.string().nullish(),
 });
 

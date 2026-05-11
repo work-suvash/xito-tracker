@@ -1,25 +1,24 @@
 import { Router } from "express";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/db";
+import { tagsTable } from "@workspace/db/schema";
 import { CreateTagBody } from "@workspace/api-zod";
+import { asc } from "drizzle-orm";
 
 const router = Router();
 
-const TABLE = "xito_tags";
-
-function mapRow(t: Record<string, unknown>) {
+function mapRow(t: typeof tagsTable.$inferSelect) {
   return {
     id: t.id,
     name: t.name,
     color: t.color,
-    createdAt: t.created_at,
+    createdAt: t.createdAt?.toISOString(),
   };
 }
 
 router.get("/", async (req, res) => {
   try {
-    const { data, error } = await supabase.from(TABLE).select("*").order("name");
-    if (error) throw error;
-    res.json((data ?? []).map(mapRow));
+    const tags = await db.select().from(tagsTable).orderBy(asc(tagsTable.name));
+    res.json(tags.map(mapRow));
   } catch (err) {
     req.log.error({ err }, "Failed to list tags");
     res.status(500).json({ error: "Internal server error" });
@@ -29,9 +28,8 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const parsed = CreateTagBody.parse(req.body);
-    const { data, error } = await supabase.from(TABLE).insert(parsed).select().single();
-    if (error) throw error;
-    res.status(201).json(mapRow(data));
+    const [inserted] = await db.insert(tagsTable).values({ name: parsed.name, color: parsed.color ?? null }).returning();
+    res.status(201).json(mapRow(inserted));
   } catch (err) {
     req.log.error({ err }, "Failed to create tag");
     res.status(400).json({ error: "Invalid data" });

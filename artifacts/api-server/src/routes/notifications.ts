@@ -1,47 +1,35 @@
 import { Router } from "express";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/db";
+import { notificationsTable, clientsTable } from "@workspace/db/schema";
+import { eq, desc } from "drizzle-orm";
 
 const router = Router();
 
-const TABLE = "xito_notifications";
-
-function mapRow(n: Record<string, unknown>, clientName?: string | null) {
+function mapRow(n: typeof notificationsTable.$inferSelect, clientName?: string | null) {
   return {
     id: n.id,
     type: n.type,
     title: n.title,
     message: n.message,
-    isRead: n.is_read,
-    clientId: n.client_id,
-    projectId: n.project_id,
-    dueDate: n.due_date,
+    isRead: n.isRead,
+    clientId: n.clientId,
+    projectId: n.projectId,
+    dueDate: n.dueDate,
     clientName: clientName ?? null,
-    createdAt: n.created_at,
+    createdAt: n.createdAt?.toISOString(),
   };
 }
 
 router.get("/", async (req, res) => {
   try {
     const { unreadOnly } = req.query as Record<string, string>;
-
-    let query = supabase.from(TABLE).select("*").order("created_at", { ascending: false });
-    if (unreadOnly === "true") query = query.eq("is_read", false);
-
-    const [{ data: notifications, error }, { data: clients }] = await Promise.all([
-      query,
-      supabase.from("xito_clients").select("id, name"),
+    const [notifications, clients] = await Promise.all([
+      db.select().from(notificationsTable).orderBy(desc(notificationsTable.createdAt)),
+      db.select({ id: clientsTable.id, name: clientsTable.name }).from(clientsTable),
     ]);
-
-    if (error) throw error;
-
-    const clientMap = new Map(
-      (clients ?? []).map((c: Record<string, unknown>) => [String(c.id), c.name])
-    );
-
-    const result = (notifications ?? []).map((n: Record<string, unknown>) =>
-      mapRow(n, n.client_id ? (clientMap.get(String(n.client_id)) as string | null) : null)
-    );
-
+    const clientMap = new Map(clients.map((c) => [c.id, c.name]));
+    let result = notifications.map((n) => mapRow(n, n.clientId ? clientMap.get(n.clientId) ?? null : null));
+    if (unreadOnly === "true") result = result.filter((n) => !n.isRead);
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to list notifications");
@@ -51,18 +39,10 @@ router.get("/", async (req, res) => {
 
 router.patch("/:id/read", async (req, res): Promise<void> => {
   try {
-    const { data, error } = await supabase
-      .from(TABLE)
-      .update({ is_read: true })
-      .eq("id", req.params.id)
-      .select()
-      .single();
-
-    if (error || !data) {
-      res.status(404).json({ error: "Notification not found" });
-      return;
-    }
-    res.json(mapRow(data));
+    const id = parseInt(req.params.id, 10);
+    const [updated] = await db.update(notificationsTable).set({ isRead: true }).where(eq(notificationsTable.id, id)).returning();
+    if (!updated) { res.status(404).json({ error: "Notification not found" }); return; }
+    res.json(mapRow(updated));
   } catch (err) {
     req.log.error({ err }, "Failed to mark notification as read");
     res.status(500).json({ error: "Internal server error" });
@@ -71,8 +51,7 @@ router.patch("/:id/read", async (req, res): Promise<void> => {
 
 router.patch("/read-all", async (req, res) => {
   try {
-    const { error } = await supabase.from(TABLE).update({ is_read: true }).eq("is_read", false);
-    if (error) throw error;
+    await db.update(notificationsTable).set({ isRead: true }).where(eq(notificationsTable.isRead, false));
     res.json({ success: true });
   } catch (err) {
     req.log.error({ err }, "Failed to mark all notifications as read");
