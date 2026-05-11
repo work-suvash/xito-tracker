@@ -1,0 +1,949 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Xito Tracker API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: clients
+    description: Client management
+  - name: projects
+    description: Project tracking
+  - name: files
+    description: File management
+  - name: notifications
+    description: Notifications and reminders
+  - name: analytics
+    description: Analytics and reporting
+  - name: tags
+    description: Tag management
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ── CLIENTS ──────────────────────────────────────────────────────────────────
+  /clients:
+    get:
+      operationId: listClients
+      tags: [clients]
+      summary: List all clients
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: tag
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: List of clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Client"
+    post:
+      operationId: createClient
+      tags: [clients]
+      summary: Create a new client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+
+  /clients/{id}:
+    get:
+      operationId: getClient
+      tags: [clients]
+      summary: Get client by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Client details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateClient
+      tags: [clients]
+      summary: Update a client
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+    delete:
+      operationId: deleteClient
+      tags: [clients]
+      summary: Delete a client
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Deleted
+
+  # ── PROJECTS ──────────────────────────────────────────────────────────────────
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List all projects
+      parameters:
+        - name: clientId
+          in: query
+          schema: { type: integer }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get project by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Deleted
+
+  /projects/{id}/status:
+    patch:
+      operationId: updateProjectStatus
+      tags: [projects]
+      summary: Update project status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectStatusUpdate"
+      responses:
+        "200":
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  # ── FILES ──────────────────────────────────────────────────────────────────
+  /files:
+    get:
+      operationId: listFiles
+      tags: [files]
+      summary: List files
+      parameters:
+        - name: projectId
+          in: query
+          schema: { type: integer }
+        - name: clientId
+          in: query
+          schema: { type: integer }
+        - name: type
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: List of files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FileRecord"
+    post:
+      operationId: createFile
+      tags: [files]
+      summary: Create file record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileRecord"
+
+  /files/{id}:
+    get:
+      operationId: getFile
+      tags: [files]
+      summary: Get file by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: File details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileRecord"
+    patch:
+      operationId: updateFile
+      tags: [files]
+      summary: Update file record
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileRecord"
+    delete:
+      operationId: deleteFile
+      tags: [files]
+      summary: Delete file record
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Deleted
+
+  # ── NOTIFICATIONS ──────────────────────────────────────────────────────────
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List notifications for current user
+      parameters:
+        - name: unreadOnly
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /notifications/{id}/read:
+    patch:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark notification as read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+
+  /notifications/read-all:
+    patch:
+      operationId: markAllNotificationsRead
+      tags: [notifications]
+      summary: Mark all notifications as read
+      responses:
+        "200":
+          description: All marked as read
+
+  # ── ANALYTICS ──────────────────────────────────────────────────────────────
+  /analytics/dashboard:
+    get:
+      operationId: getDashboardStats
+      tags: [analytics]
+      summary: Get dashboard summary stats
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /analytics/monthly:
+    get:
+      operationId: getMonthlyAnalytics
+      tags: [analytics]
+      summary: Get monthly bookings, revenue, workload
+      parameters:
+        - name: year
+          in: query
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Monthly analytics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MonthlyAnalytics"
+
+  /analytics/upcoming:
+    get:
+      operationId: getUpcomingEvents
+      tags: [analytics]
+      summary: Get upcoming deadlines and wedding dates
+      responses:
+        "200":
+          description: Upcoming events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UpcomingEvent"
+
+  /analytics/project-status:
+    get:
+      operationId: getProjectStatusBreakdown
+      tags: [analytics]
+      summary: Get project status distribution
+      responses:
+        "200":
+          description: Status breakdown
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StatusCount"
+
+  # ── TAGS ──────────────────────────────────────────────────────────────────
+  /tags:
+    get:
+      operationId: listTags
+      tags: [tags]
+      summary: List all tags
+      responses:
+        "200":
+          description: List of tags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tag"
+    post:
+      operationId: createTag
+      tags: [tags]
+      summary: Create a tag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    # ── CLIENT SCHEMAS ────────────────────────────────────────────────────────
+    Client:
+      type: object
+      required: [id, name, email, phone, status, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        status:
+          type: string
+          description: "active | inactive | completed"
+        weddingDate:
+          type: ["string", "null"]
+        eventLocation:
+          type: ["string", "null"]
+        packageType:
+          type: ["string", "null"]
+        totalAmount:
+          type: ["number", "null"]
+        advancePaid:
+          type: ["number", "null"]
+        remainingBalance:
+          type: ["number", "null"]
+        paymentStatus:
+          type: ["string", "null"]
+          description: "pending | partial | paid"
+        notes:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        progress:
+          type: ["integer", "null"]
+          description: "0-100 percentage"
+        referredBy:
+          type: ["string", "null"]
+        avatarUrl:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: ["string", "null"]
+
+    ClientInput:
+      type: object
+      required: [name, email, phone]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        status:
+          type: string
+        weddingDate:
+          type: ["string", "null"]
+        eventLocation:
+          type: ["string", "null"]
+        packageType:
+          type: ["string", "null"]
+        totalAmount:
+          type: ["number", "null"]
+        advancePaid:
+          type: ["number", "null"]
+        remainingBalance:
+          type: ["number", "null"]
+        paymentStatus:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        progress:
+          type: ["integer", "null"]
+        referredBy:
+          type: ["string", "null"]
+        avatarUrl:
+          type: ["string", "null"]
+
+    ClientUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        status:
+          type: string
+        weddingDate:
+          type: ["string", "null"]
+        eventLocation:
+          type: ["string", "null"]
+        packageType:
+          type: ["string", "null"]
+        totalAmount:
+          type: ["number", "null"]
+        advancePaid:
+          type: ["number", "null"]
+        remainingBalance:
+          type: ["number", "null"]
+        paymentStatus:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        progress:
+          type: ["integer", "null"]
+        referredBy:
+          type: ["string", "null"]
+        avatarUrl:
+          type: ["string", "null"]
+
+    # ── PROJECT SCHEMAS ───────────────────────────────────────────────────────
+    Project:
+      type: object
+      required: [id, name, clientId, status, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        clientId:
+          type: integer
+        clientName:
+          type: ["string", "null"]
+        status:
+          type: string
+          description: "Booked | Editing | Preview Sent | Final Delivery | Completed"
+        type:
+          type: ["string", "null"]
+          description: "Photography | Videography | Photo+Video | Album | Highlights"
+        deadline:
+          type: ["string", "null"]
+        deliveryDate:
+          type: ["string", "null"]
+        deliveryLink:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        priority:
+          type: ["string", "null"]
+          description: "low | medium | high"
+        assignedTo:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: ["string", "null"]
+
+    ProjectInput:
+      type: object
+      required: [name, clientId, status]
+      properties:
+        name:
+          type: string
+        clientId:
+          type: integer
+        status:
+          type: string
+        type:
+          type: ["string", "null"]
+        deadline:
+          type: ["string", "null"]
+        deliveryDate:
+          type: ["string", "null"]
+        deliveryLink:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        priority:
+          type: ["string", "null"]
+        assignedTo:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+
+    ProjectUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        clientId:
+          type: integer
+        status:
+          type: string
+        type:
+          type: ["string", "null"]
+        deadline:
+          type: ["string", "null"]
+        deliveryDate:
+          type: ["string", "null"]
+        deliveryLink:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        priority:
+          type: ["string", "null"]
+        assignedTo:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items:
+            type: string
+
+    ProjectStatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+
+    # ── FILE SCHEMAS ──────────────────────────────────────────────────────────
+    FileRecord:
+      type: object
+      required: [id, name, type, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        originalName:
+          type: string
+        type:
+          type: string
+          description: "photo | video | document | other"
+        size:
+          type: ["integer", "null"]
+        url:
+          type: ["string", "null"]
+        deliveryLink:
+          type: ["string", "null"]
+        projectId:
+          type: ["integer", "null"]
+        clientId:
+          type: ["integer", "null"]
+        clientName:
+          type: ["string", "null"]
+        projectName:
+          type: ["string", "null"]
+        uploadedBy:
+          type: ["string", "null"]
+        availability:
+          type: string
+          description: "available | processing | archived | deleted"
+        backupStatus:
+          type: string
+          description: "none | pending | backed_up"
+        downloadCount:
+          type: integer
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: ["string", "null"]
+
+    FileInput:
+      type: object
+      required: [name, type]
+      properties:
+        name:
+          type: string
+        originalName:
+          type: string
+        type:
+          type: string
+        size:
+          type: ["integer", "null"]
+        url:
+          type: ["string", "null"]
+        deliveryLink:
+          type: ["string", "null"]
+        projectId:
+          type: ["integer", "null"]
+        clientId:
+          type: ["integer", "null"]
+        uploadedBy:
+          type: ["string", "null"]
+        availability:
+          type: string
+        backupStatus:
+          type: string
+        notes:
+          type: ["string", "null"]
+
+    FileUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        deliveryLink:
+          type: ["string", "null"]
+        availability:
+          type: string
+        backupStatus:
+          type: string
+        notes:
+          type: ["string", "null"]
+
+    # ── NOTIFICATION SCHEMAS ──────────────────────────────────────────────────
+    Notification:
+      type: object
+      required: [id, type, message, isRead, createdAt]
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          description: "payment_due | deadline | wedding_upcoming | delivery_pending | general"
+        title:
+          type: string
+        message:
+          type: string
+        isRead:
+          type: boolean
+        clientId:
+          type: ["integer", "null"]
+        projectId:
+          type: ["integer", "null"]
+        clientName:
+          type: ["string", "null"]
+        dueDate:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    # ── ANALYTICS SCHEMAS ─────────────────────────────────────────────────────
+    DashboardStats:
+      type: object
+      required: [totalClients, activeProjects, pendingDeliveries, completedWeddings, totalRevenue, collectedRevenue, pendingRevenue, thisMonthBookings]
+      properties:
+        totalClients:
+          type: integer
+        activeProjects:
+          type: integer
+        pendingDeliveries:
+          type: integer
+        completedWeddings:
+          type: integer
+        totalRevenue:
+          type: number
+        collectedRevenue:
+          type: number
+        pendingRevenue:
+          type: number
+        thisMonthBookings:
+          type: integer
+        storageUsed:
+          type: ["integer", "null"]
+        totalFiles:
+          type: integer
+
+    MonthlyAnalytics:
+      type: object
+      required: [month, year, bookings, revenue, projectsCompleted]
+      properties:
+        month:
+          type: integer
+        year:
+          type: integer
+        monthName:
+          type: string
+        bookings:
+          type: integer
+        revenue:
+          type: number
+        projectsCompleted:
+          type: integer
+
+    UpcomingEvent:
+      type: object
+      required: [id, type, title, date]
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          description: "wedding | deadline | delivery | payment"
+        title:
+          type: string
+        date:
+          type: string
+        clientName:
+          type: ["string", "null"]
+        projectName:
+          type: ["string", "null"]
+        daysUntil:
+          type: integer
+        urgency:
+          type: string
+          description: "low | medium | high | critical"
+
+    StatusCount:
+      type: object
+      required: [status, count]
+      properties:
+        status:
+          type: string
+        count:
+          type: integer
+        percentage:
+          type: number
+
+    # ── TAG SCHEMAS ───────────────────────────────────────────────────────────
+    Tag:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        color:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    TagInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        color:
+          type: ["string", "null"]
