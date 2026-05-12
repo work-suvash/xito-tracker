@@ -1,0 +1,6 @@
+node_modules
+.local
+artifacts/api-server/dist
+artifacts/xito-tracker/dist
+lib/db/dist
+lib/api-zod/dist
